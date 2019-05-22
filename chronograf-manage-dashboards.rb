@@ -35,7 +35,7 @@ class CLI
     when 'create'
       create_dashboard(@options[:template], @args[1])
     when 'update'
-      update_dashboard(@options[:template], @args[1], @args[2])
+      update_dashboard(@options[:template], @args[1])
     else
       print("Invalid action '#{@args[0]}'\n")
     end
@@ -59,12 +59,14 @@ class CLI
     end
   end
 
-  def update_dashboard(template, id, host)
-    data = dashboard_from_template(template, host, host)
+  def update_dashboard(template, id)
+    data = dashboard_from_template(id, nil, nil)
+    host = data['templates'].select { |t| t['tempVar'] == @options[:host_var] }.first['values'].first['value']
+    tmpl = dashboard_from_template(template, data['name'], host)
 
-    dashboard_update(id, data)
+    dashboard_update(id, tmpl)
 
-    print("Dashboard updated (#{id}): #{host}\n")
+    print("Dashboard updated (#{id}): #{data['name']}\n")
   end
 
   def influxdb
@@ -105,13 +107,13 @@ class CLI
     JSON.parse(Net::HTTP.get(chronograf_uri('dashboards', id)))
   end
 
-  def dashboard_from_template(dashboard_id, name, host)
+  def dashboard_from_template(dashboard_id, name = nil, host = nil)
     d = dashboard_data(dashboard_id)
 
-    d['name'] = name
+    d['name'] = name if name
     d['templates'].select { |t| t['tempVar'] == @options[:host_var] }
                   .first['values']
-                  .first['value'] = host
+                  .first['value'] = host if host
 
     d
   end
@@ -123,9 +125,13 @@ class CLI
   end
 
   def dashboard_update(id, data)
-    res = Net::HTTP.post(chronograf_uri('dashboards', id), data.to_json)
+    uri  = chronograf_uri('dashboards', id)
+    http = Net::HTTP.new(uri.host, uri.port)
+    req  = Net::HTTP::Delete.new(uri.path)
 
-    res.code == '200'
+    http.request(req)
+
+    dashboard_create(data)
   end
 end
 
